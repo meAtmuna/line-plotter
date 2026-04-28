@@ -3,16 +3,29 @@
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
+#include <math.h>
 
 #define HEIGHT 30
 #define WIDTH 100
 
+#define GREEN "\x1b[32m"
+#define RESET "\x1b[0m"
+
 int make_screen_array(char *screen_buffer);
 int draw_symbol(int ball_x, int ball_y, char *screen_buffer, char symbol);
 double ask_for_data(char *question);
-int *calc_y_bounds(double slope, double y_intercept);
-int draw_graph(double slope, double y_intercept);
+int *calc_y_bounds();
+int draw_graph();
 int draw_max_min_scale(int *bounds, char *screen_buffer);
+double evaluate(int x, int second_func);
+
+int function_type;
+double a, b, c;
+
+double a2, b2, c2;
+int second = 0;
+
+double zoom = 1.0;
 
 #ifdef _WIN32
 #include <windows.h>
@@ -25,14 +38,45 @@ int draw_max_min_scale(int *bounds, char *screen_buffer);
 #endif
 
 int main() {
-    double slope = ask_for_data("slope");
-    double y_intercept = ask_for_data("y_intercept");
+    printf("choose function (1 =  line, 2 = quadratic): ");
+    scanf("%d", &function_type);
+    getchar();
+    
+    if (function_type == 1) {
+        b = ask_for_data("slope");
+        c = ask_for_data("y_intercept");
+    }
+    else {
+        a = ask_for_data("a");
+        b = ask_for_data("b");
+        c = ask_for_data("c");
+    }
+
+    printf("Do you want second function? (1=yes, 0=no): ");
+    scanf("%d", &second);
+    getchar();
+
+    if (second) {
+        printf("Second funtion:\n");
+
+        if (function_type == 1) {
+            b2 = ask_for_data("slope");
+            c2 = ask_for_data("y_intercept");
+        }
+        else {
+            a2 = ask_for_data("a");
+            b2 = ask_for_data("b");
+            c2 = ask_for_data("c");
+        }
+    }
+
+    zoom = ask_for_data("zoom (1 = normal)");
 
     printf("\x1b[8;%d;%dt", HEIGHT + 1, WIDTH + 2);
     printf("\x1b[?25l");
     CLEAR_SCREEN();
 
-    draw_graph(slope, y_intercept);
+    draw_graph();
 
     SLEEP(5);
     CLEAR_SCREEN();
@@ -69,10 +113,6 @@ int draw_symbol(int ball_x, int ball_y, char *screen_buffer, char symbol) {
     int location = ball_y * (WIDTH + 1) + ball_x;
     screen_buffer[location] = symbol;
 
-    printf("\x1b[H");
-    printf("%s", screen_buffer);
-    fflush(stdout);
-
     return 0;
 }
 
@@ -96,7 +136,30 @@ double ask_for_data(char *question) {
     }
 }
 
-int *calc_y_bounds(double slope, double y_intercept) {
+double evaluate(int x, int second_func) {
+    double real_x = x / zoom;
+
+    if (!second_func)
+    {
+        if (function_type == 1) {
+            return b * real_x + c;
+        }
+        else {
+            return a * real_x * real_x + b * real_x + c;
+        } 
+    }
+    else
+    {
+        if (function_type == 1) {
+            return b2 * real_x + c2;
+        }
+        else {
+            return a2 * real_x * real_x + b2 * real_x + c2;
+        } 
+    }
+}
+
+int *calc_y_bounds() {
     int *arr = malloc(2 * sizeof(int));
     
     arr[0] = INT_MAX;
@@ -104,24 +167,40 @@ int *calc_y_bounds(double slope, double y_intercept) {
 
     for (int i = 0; i < WIDTH; i++)
     {
-        int y = (int)(slope * i + y_intercept);
-        if (y > arr[1]) arr[1] = y;
-        if (y < arr[0]) arr[0] = y;
+        double y1 = evaluate(i, 0);
+        
+        if (!isnan(y1) && !isinf(y1))
+        {
+            if (y1 > arr[1]) arr[1] = y1;
+            if (y1 < arr[0]) arr[0] = y1;
+        }
+
+        if (second) {
+            double y2 = evaluate(i, 1);
+
+            if (!isnan(y2) && !isinf(y2))
+            {
+                if (y2 > arr[1]) arr[1] = y2;
+                if (y2 < arr[0]) arr[0] = y2;
+            }
+        }
     }
     
     return arr;
 }
 
-int draw_graph(double slope, double y_intercept) {
+
+int draw_graph() {
+    
     char *screen_buffer = malloc((WIDTH + 1) * HEIGHT + 1);
-
+    
     make_screen_array(screen_buffer);
-    int *bounds = calc_y_bounds(slope, y_intercept);
-
+    int *bounds = calc_y_bounds();
+    
     int x_axis_location;
-
+    
     if (bounds[0] == bounds[1]) {
-        x_axis_location = (HEIGHT / 2) - y_intercept;
+        x_axis_location = (HEIGHT / 2);
     } else {
         double x_axis_ratio = (0.0 - bounds[0]) / (bounds[1] - bounds[0]);
         x_axis_location = (int)((HEIGHT - 1) * x_axis_ratio);
@@ -136,7 +215,10 @@ int draw_graph(double slope, double y_intercept) {
 
     for (int i = 0; i < WIDTH; i++)
     {
-        double y = slope * i + y_intercept;
+        double y = evaluate(i, 0);
+
+        if (isnan(y) || isinf(y)) continue;
+
         int normal_y;
         if (bounds[0] == bounds[1])
         {
@@ -152,7 +234,36 @@ int draw_graph(double slope, double y_intercept) {
         draw_symbol(i, normal_y, screen_buffer, 'o');
     }
 
+    if (second)
+    {
+        for (int i = 0; i < WIDTH; i++)
+        {
+            double y = evaluate(i, 1);
+
+            if (isnan(y) || isinf(y)) continue;
+
+            int normal_y;
+            if (bounds[0] == bounds[1])
+            {
+                normal_y = HEIGHT / 2;
+            }
+            else
+            {
+                normal_y = (int)((HEIGHT - 1) * ((y - bounds[0]) / (bounds[1] - bounds[0])));
+            }
+            if (normal_y < 0) normal_y = 0;
+            if (normal_y > HEIGHT - 1) normal_y = HEIGHT - 1;
+            
+            draw_symbol(i, normal_y, screen_buffer, 'x');
+        }
+        
+    }
+    
     draw_max_min_scale(bounds, screen_buffer);
+    
+    printf("\x1b[H");
+    printf(GREEN "%s" RESET, screen_buffer);
+    fflush(stdout);
     
     free(screen_buffer);
     free(bounds);
@@ -177,10 +288,6 @@ int draw_max_min_scale(int *bounds, char *screen_buffer) {
         
         memcpy(&screen_buffer[location], max_string, flat_len);
 
-        printf("\x1b[H");
-        printf("%s", screen_buffer);
-        fflush(stdout);
-
         return 0;
     }
     
@@ -202,10 +309,6 @@ int draw_max_min_scale(int *bounds, char *screen_buffer) {
     }
     
     memcpy(&screen_buffer[location], min_string, min_len);
-
-    printf("\x1b[H");
-    printf("%s", screen_buffer);
-    fflush(stdout);
 
     return 0;
 }
